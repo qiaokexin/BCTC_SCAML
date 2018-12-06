@@ -143,37 +143,38 @@ class mydes:
     DECRYPT =    0x01
 
     # Initialisation
-    def __init__(self, key):
+    #def __init__(self):
         # Sanity checking of arguments.
         
+       
+    block_size = 8
+    key_size = 8
+
+    L = []
+    R = []
+    Kn = [ [0] * 48 ] * 16    # 16 48-bit keys (K1 - K16)
+    final = []
+    Sbox_output = []
+    key = []
+        #mydes.setKey(key)
+    @staticmethod
+    def setKey(key):
+        """Will set the crypting key for this object. Must be 8 bytes."""
         if len(key) != 8:
             raise ValueError("Invalid DES key size. Key must be exactly 8 bytes long.")
-        self.block_size = 8
-        self.key_size = 8
+        mydes.__key = key
 
-        self.L = []
-        self.R = []
-        self.Kn = [ [0] * 48 ] * 16    # 16 48-bit keys (K1 - K16)
-        self.final = []
-        self.Sbox_output = []
-
-        self.setKey(key)
-
-    def setKey(self, key):
-        """Will set the crypting key for this object. Must be 8 bytes."""
-        
-        self.__key = key
-
-        self.__create_sub_keys()
-
-    def getKey(self):
+        mydes.__create_sub_keys(key)
+    @staticmethod
+    def getKey():
         """getKey() -> bytes"""
-        return self.__key
-    def getSubKey(self):
-        return self.__Kn
+        return mydes.__key
+    @staticmethod
+    def getSubKey():
+        return mydes.__Kn
 
-
-    def __int_to_BitList(self, data):
+    @staticmethod
+    def __int_to_BitList(data):
         """Turn the np.array([...],dtype=np.uint8) data, into a list of bits (1, 0)'s"""
         
         l = len(data) * 8
@@ -190,8 +191,8 @@ class mydes:
                 i -= 1
 
         return result
-
-    def __BitList_to_int(self, data):
+    @staticmethod
+    def __BitList_to_int(data):
         """Turn the list of bits -> data, into a np.array([...],dtype=np.uint8)"""
         result = []
         pos = 0
@@ -205,46 +206,78 @@ class mydes:
 
         
         return np.array(result,dtype=np.uint8)
+    @staticmethod
+    def __SixBitList_to_int(data):
+        """Turn the list of bits -> data, into a np.array([...],dtype=np.uint8)"""
+        assert (len(data)%6==0)
+        result = []
+        pos = 0
+        c = 0
+        while pos < len(data):
+            c += data[pos] << (5 - (pos % 6))
+            if (pos % 6) == 5:
+                result.append(c)
+                c = 0
+            pos += 1
 
-    def __permutate(self, table, block):
+        
+        return np.array(result,dtype=np.uint8)
+    @staticmethod
+    def __permutate(table, block):
         """Permutate this block with the specified table"""
         return list(map(lambda x: block[x], table))
+    @staticmethod
+    def inverse_Sbox():
+        inverse_Sbox=[[[] for j in range(16)] for i in range(8)]
+        for i in range(8):
+            for Sin in range(64):
+                m = ((Sin & 32)>>4) + (Sin & 1)
+                n = (Sin & (16+8+4+2)) >>1
+                Sout = mydes.__sbox[i][(m << 4) + n]
+                inverse_Sbox[i][Sout].append(Sin)
+        
+        return inverse_Sbox
+    
     
     # Transform the secret key, so that it is ready for data processing
     # Create the 16 subkeys, K[1] - K[16]
-    def __create_sub_keys(self):
+    @staticmethod
+    def __create_sub_keys(inputkey):
         """Create the 16 subkeys K[1] to K[16] from the given key"""
-        key = self.__permutate(self.__pc1, self.__int_to_BitList(self.getKey()))
+        #key = mydes.__permutate(mydes.__pc1, mydes.__int_to_BitList(mydes.getKey()))
+        key = mydes.__permutate(mydes.__pc1, mydes.__int_to_BitList(inputkey))
         i = 0
         # Split into Left and Right sections
-        self.L = key[:28]
-        self.R = key[28:]
+        mydes.L = key[:28]
+        mydes.R = key[28:]
         while i < 16:
             j = 0
             # Perform circular left shifts
-            while j < self.__left_rotations[i]:
-                self.L.append(self.L[0])
-                del self.L[0]
+            while j < mydes.__left_rotations[i]:
+                mydes.L.append(mydes.L[0])
+                del mydes.L[0]
 
-                self.R.append(self.R[0])
-                del self.R[0]
+                mydes.R.append(mydes.R[0])
+                del mydes.R[0]
 
                 j += 1
 
             # Create one of the 16 subkeys through pc2 permutation
-            self.Kn[i] = self.__permutate(self.__pc2, self.L + self.R)
+            mydes.Kn[i] = mydes.__permutate(mydes.__pc2, mydes.L + mydes.R)
 
             i += 1
 
     # Main part of the encryption algorithm, the number cruncher :)
-    def __des_crypt(self, block, crypt_type):
+    @staticmethod
+    def __des_crypt(block,key, crypt_type):
         """Crypt the block of data through DES bit-manipulation"""
-        block = self.__permutate(self.__ip, block)
-        self.L = block[:32]
-        self.R = block[32:]
+        mydes.setKey(key)
+        block = mydes.__permutate(mydes.__ip, block)
+        mydes.L = block[:32]
+        mydes.R = block[32:]
 
         # Encryption starts from Kn[1] through to Kn[16]
-        if crypt_type == self.ENCRYPT:
+        if crypt_type == mydes.ENCRYPT:
             iteration = 0
             iteration_adjustment = 1
         # Decryption starts from Kn[16] down to Kn[1]
@@ -255,22 +288,22 @@ class mydes:
         i = 0
         while i < 16:
             # Make a copy of R[i-1], this will later become L[i]
-            tempR = self.R[:]
+            tempR = mydes.R[:]
 
             # Permutate R[i - 1] to start creating R[i]
-            self.R = self.__permutate(self.__expansion_table, self.R)
+            mydes.R = mydes.__permutate(mydes.__expansion_table, mydes.R)
 
             # Exclusive or R[i - 1] with K[i], create B[1] to B[8] whilst here
-            self.R = list(map(lambda x, y: x ^ y, self.R, self.Kn[iteration]))
-            B = [self.R[:6], self.R[6:12], self.R[12:18], self.R[18:24], self.R[24:30], self.R[30:36], self.R[36:42], self.R[42:]]
+            mydes.R = list(map(lambda x, y: x ^ y, mydes.R, mydes.Kn[iteration]))
+            B = [mydes.R[:6], mydes.R[6:12], mydes.R[12:18], mydes.R[18:24], mydes.R[24:30], mydes.R[30:36], mydes.R[36:42], mydes.R[42:]]
             # Optimization: Replaced below commented code with above
             #j = 0
             #B = []
-            #while j < len(self.R):
-            #    self.R[j] = self.R[j] ^ self.Kn[iteration][j]
+            #while j < len(mydes.R):
+            #    mydes.R[j] = mydes.R[j] ^ mydes.Kn[iteration][j]
             #    j += 1
             #    if j % 6 == 0:
-            #        B.append(self.R[j-6:j])
+            #        B.append(mydes.R[j-6:j])
 
             # Permutate B[1] to B[8] using the S-Boxes
             j = 0
@@ -282,7 +315,7 @@ class mydes:
                 n = (B[j][1] << 3) + (B[j][2] << 2) + (B[j][3] << 1) + B[j][4]
 
                 # Find the permutation value
-                v = self.__sbox[j][(m << 4) + n]
+                v = mydes.__sbox[j][(m << 4) + n]
 
                 # Turn value into bits, add it to result: Bn
                 Bn[pos] = (v & 8) >> 3
@@ -294,38 +327,40 @@ class mydes:
                 j += 1
 
             # Permutate the concatination of B[1] to B[8] (Bn)
-            self.R = self.__permutate(self.__p, Bn)
+            mydes.R = mydes.__permutate(mydes.__p, Bn)
 
             # Xor with L[i - 1]
-            self.R = list(map(lambda x, y: x ^ y, self.R, self.L))
+            mydes.R = list(map(lambda x, y: x ^ y, mydes.R, mydes.L))
             # Optimization: This now replaces the below commented code
             #j = 0
-            #while j < len(self.R):
-            #    self.R[j] = self.R[j] ^ self.L[j]
+            #while j < len(mydes.R):
+            #    mydes.R[j] = mydes.R[j] ^ mydes.L[j]
             #    j += 1
 
             # L[i] becomes R[i - 1]
-            self.L = tempR
+            mydes.L = tempR
 
             i += 1
             iteration += iteration_adjustment
         
         # Final permutation of R[16]L[16]
-        self.final = self.__permutate(self.__fp, self.R + self.L)
-        return self.final
+        mydes.final = mydes.__permutate(mydes.__fp, mydes.R + mydes.L)
+        return mydes.final
     
     # get IntermediateValue during des,for example Sbox output in first round
-    def des_getIntermediateValue(self, plaintext, crypt_type):
+    @staticmethod
+    def des_getIntermediateValue(plaintext, key, crypt_type):
         
-        self.Sbox_output=[]
-        block = self.__int_to_BitList(plaintext)
+        mydes.Sbox_output=[]
+        block = mydes.__int_to_BitList(plaintext)
         """Crypt the block of data through DES bit-manipulation"""
-        block = self.__permutate(self.__ip, block)
-        self.L = block[:32]
-        self.R = block[32:]
+        mydes.setKey(key)
+        block = mydes.__permutate(mydes.__ip, block)
+        mydes.L = block[:32]
+        mydes.R = block[32:]
 
         # Encryption starts from Kn[1] through to Kn[16]
-        if crypt_type == self.ENCRYPT:
+        if crypt_type == mydes.ENCRYPT:
             iteration = 0
             iteration_adjustment = 1
         # Decryption starts from Kn[16] down to Kn[1]
@@ -336,22 +371,22 @@ class mydes:
         i = 0
         while i < 1:
             # Make a copy of R[i-1], this will later become L[i]
-            tempR = self.R[:]
+            tempR = mydes.R[:]
 
             # Permutate R[i - 1] to start creating R[i]
-            self.R = self.__permutate(self.__expansion_table, self.R)
+            mydes.R = mydes.__permutate(mydes.__expansion_table, mydes.R)
 
             # Exclusive or R[i - 1] with K[i], create B[1] to B[8] whilst here
-            self.R = list(map(lambda x, y: x ^ y, self.R, self.Kn[iteration]))
-            B = [self.R[:6], self.R[6:12], self.R[12:18], self.R[18:24], self.R[24:30], self.R[30:36], self.R[36:42], self.R[42:]]
+            mydes.R = list(map(lambda x, y: x ^ y, mydes.R, mydes.Kn[iteration]))
+            B = [mydes.R[:6], mydes.R[6:12], mydes.R[12:18], mydes.R[18:24], mydes.R[24:30], mydes.R[30:36], mydes.R[36:42], mydes.R[42:]]
             # Optimization: Replaced below commented code with above
             #j = 0
             #B = []
-            #while j < len(self.R):
-            #    self.R[j] = self.R[j] ^ self.Kn[iteration][j]
+            #while j < len(mydes.R):
+            #    mydes.R[j] = mydes.R[j] ^ mydes.Kn[iteration][j]
             #    j += 1
             #    if j % 6 == 0:
-            #        B.append(self.R[j-6:j])
+            #        B.append(mydes.R[j-6:j])
 
             # Permutate B[1] to B[8] using the S-Boxes
             j = 0
@@ -363,9 +398,9 @@ class mydes:
                 n = (B[j][1] << 3) + (B[j][2] << 2) + (B[j][3] << 1) + B[j][4]
 
                 # Find the permutation value
-                v = self.__sbox[j][(m << 4) + n]
+                v = mydes.__sbox[j][(m << 4) + n]
 
-                self.Sbox_output.append(v)
+                mydes.Sbox_output.append(v)
                 # Turn value into bits, add it to result: Bn
                 Bn[pos] = (v & 8) >> 3
                 Bn[pos + 1] = (v & 4) >> 2
@@ -376,37 +411,38 @@ class mydes:
                 j += 1
 
             # Permutate the concatination of B[1] to B[8] (Bn)
-            self.R = self.__permutate(self.__p, Bn)
+            mydes.R = mydes.__permutate(mydes.__p, Bn)
 
             # Xor with L[i - 1]
-            self.R = list(map(lambda x, y: x ^ y, self.R, self.L))
+            mydes.R = list(map(lambda x, y: x ^ y, mydes.R, mydes.L))
             # Optimization: This now replaces the below commented code
             #j = 0
-            #while j < len(self.R):
-            #    self.R[j] = self.R[j] ^ self.L[j]
+            #while j < len(mydes.R):
+            #    mydes.R[j] = mydes.R[j] ^ mydes.L[j]
             #    j += 1
 
             # L[i] becomes R[i - 1]
-            self.L = tempR
+            mydes.L = tempR
 
             i += 1
             iteration += iteration_adjustment
         
         # Final permutation of R[16]L[16]
-        self.final = self.__permutate(self.__fp, self.R + self.L)
-        return self.Sbox_output
+        mydes.final = mydes.__permutate(mydes.__fp, mydes.R + mydes.L)
+        return mydes.Sbox_output
 
 
     # Data to be encrypted/decrypted
-    def crypt(self, data, crypt_type):
+    @staticmethod
+    def crypt(data, key, crypt_type):
         """Crypt the data in blocks, running it through des_crypt()"""
 
         # Error check the data
         if not data:
             return ''
-        if len(data) % self.block_size != 0:
+        if len(data) % mydes.block_size != 0:
             # Decryption must work on 8 byte blocks
-            raise ValueError("Invalid data length, data must be a multiple of " + str(self.block_size) + " bytes\n.")
+            raise ValueError("Invalid data length, data must be a multiple of " + str(mydes.block_size) + " bytes\n.")
             
 
 
@@ -426,16 +462,16 @@ class mydes:
             #    i += 8
             #    continue
                 
-            block = self.__int_to_BitList(data[i:i+8])
+            block = mydes.__int_to_BitList(data[i:i+8])
 
             # ECB mode
-            processed_block = self.__des_crypt(block, crypt_type)
+            processed_block = mydes.__des_crypt(block, key, crypt_type)
 
 
             # Add the resulting crypted block to our list
-            #d = self.__BitList_to_String(processed_block)
+            #d = mydes.__BitList_to_String(processed_block)
             #result.append(d)
-            result.append(self.__BitList_to_int(processed_block))
+            result.append(mydes.__BitList_to_int(processed_block))
             #dict[data[i:i+8]] = d
             i += 8
 
@@ -443,4 +479,3 @@ class mydes:
 
         # Return the full crypted uint
         return np.array(result,dtype=np.uint8)
-
